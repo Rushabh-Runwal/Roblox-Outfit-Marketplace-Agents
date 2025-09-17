@@ -2,7 +2,7 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from agents.contracts import ChatIn, ChatOut, KeywordSpec, IdsOut
+from agents.contracts import ChatIn, ChatOut
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -14,10 +14,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS for localhost development
+# Configure CORS for localhost development (any port)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,22 +35,10 @@ async def chat(chat_input: ChatIn) -> ChatOut:
     """Chat endpoint to process user prompts and return outfit recommendations."""
     try:
         from agents.orchestrator import chat as orchestrator_chat
-        return orchestrator_chat(chat_input.prompt, chat_input.user_id)
+        return await orchestrator_chat(chat_input.prompt, chat_input.user_id)
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.post("/keywords-to-ids", response_model=IdsOut)
-async def keywords_to_ids(keyword_spec: KeywordSpec) -> IdsOut:
-    """Convert KeywordSpec to Roblox catalog item IDs."""
-    try:
-        from agents.orchestrator import keywords_to_ids as orchestrator_keywords_to_ids
-        return await orchestrator_keywords_to_ids(keyword_spec.model_dump())
-    except Exception as e:
-        logger.error(f"Error in keywords-to-ids endpoint: {e}")
-        # Return 502 on Firecrawl failure as specified
-        raise HTTPException(status_code=502, detail={"success": False, "message": "firecrawl_error"})
 
 
 if __name__ == "__main__":
