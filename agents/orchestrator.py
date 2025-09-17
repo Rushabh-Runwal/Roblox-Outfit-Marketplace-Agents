@@ -1,156 +1,144 @@
 """Orchestrator to coordinate agents and provide business logic."""
 import logging
 from typing import Dict, Any
-from agents.contracts import ChatOut, IdsOut, KeywordSpec
+
+from agents.contracts import ChatOut, OutfitItem, KeywordSpec
 from agents.conversation_agent import run_conversation_agent
-from agents.firecrawl_agent import fetch_ids_from_firecrawl
+from agents.roblox_catalog_client import search_catalog, map_items
+from agents.light_ranker import LightRanker
 
 logger = logging.getLogger(__name__)
 
 
-def chat(prompt: str, user_id: int) -> ChatOut:
+async def chat(prompt: str, user_id: int) -> ChatOut:
     """
-    Process user chat input and return outfit recommendations.
+    Main chat orchestrator that handles the full pipeline:
+    1. ConversationAgent.run(prompt) → KeywordSpec (internal only)
+    2. RobloxCatalogClient.search_catalog(theme, limit=12) → candidates
+    3. LightRanker.run(candidates, n=6..10) → final list
     
     Args:
-        prompt: User's natural language input
-        user_id: Unique user identifier
+        prompt: User's natural language prompt
+        user_id: User identifier
         
     Returns:
-        ChatOut with success status, user_id, reply, and keywordSpec
+        ChatOut with success status, reply, and outfit items
     """
     try:
-        # Step 1: Extract keyword specification from prompt
+        logger.info(f"Processing chat request: user_id={user_id}, prompt_length={len(prompt)}")
+        
+        # Step 1: Extract keywords using conversation agent
         keyword_spec_dict = run_conversation_agent(prompt)
         keyword_spec = KeywordSpec(**keyword_spec_dict)
         
-        # Step 2: Generate a helpful NPC-style reply
-        reply = _generate_chat_reply(keyword_spec, prompt)
+        theme = keyword_spec.theme
+        style = keyword_spec.style
         
-        # Step 3: Return structured response
+        logger.info(f"Extracted theme='{theme}', style='{style}' for user_id={user_id}")
+        
+        # Step 2: Search Roblox catalog
+        raw_items = await search_catalog(theme, limit=12)
+        
+        if not raw_items:
+            logger.warning(f"No items found for theme '{theme}' for user_id={user_id}")
+            return ChatOut(
+                success=False,
+                user_id=user_id,
+                reply="Sorry, I couldn't find items right now. Please try again later.",
+                outfit=[]
+            )
+        
+        # Step 3: Map raw items to OutfitItem objects
+        candidate_items = map_items(raw_items)
+        logger.info(f"Mapped {len(candidate_items)} candidate items for user_id={user_id}")
+        
+        if not candidate_items:
+            logger.warning(f"No valid items after mapping for user_id={user_id}")
+            return ChatOut(
+                success=False,
+                user_id=user_id,
+                reply="Sorry, I couldn't find items right now. Please try again later.",
+                outfit=[]
+            )
+        
+        # Step 4: Use light ranker to get final diverse selection
+        final_items = LightRanker.run(candidate_items, n=8)  # Target 8 items for good variety
+        logger.info(f"Ranked to {len(final_items)} final items for user_id={user_id}")
+        
+        # Step 5: Generate reply
+        reply = _generate_chat_reply(keyword_spec, len(final_items))
+        
         return ChatOut(
             success=True,
             user_id=user_id,
             reply=reply,
-            keywordSpec=keyword_spec
+            outfit=final_items
         )
         
     except Exception as e:
-        logger.error(f"Error in chat orchestrator: {e}")
-        # Return error response with minimal keyword spec
-        fallback_spec = KeywordSpec(theme="unknown")
+        logger.error(f"Error in chat orchestrator for user_id={user_id}: {e}")
         return ChatOut(
             success=False,
             user_id=user_id,
-            reply="I'm sorry, I had trouble understanding your request. Could you try describing your outfit again?",
-            keywordSpec=fallback_spec
+            reply="I'm sorry, I had trouble processing your request. Could you try again?",
+            outfit=[]
         )
 
 
-async def keywords_to_ids(keyword_spec: dict) -> IdsOut:
+def _generate_chat_reply(keyword_spec: KeywordSpec, item_count: int) -> str:
     """
-    Convert KeywordSpec to Roblox catalog item IDs.
+    Generate a friendly chat reply based on the keyword specification and results.
     
     Args:
-        keyword_spec: Dictionary containing theme, style, parts, color, budget
+        keyword_spec: The extracted keywords and requirements
+        item_count: Number of items found
         
     Returns:
-        IdsOut with success status and list of catalog item IDs
-    """
-    try:
-        # Use Firecrawl agent to find matching catalog items
-        ids = await fetch_ids_from_firecrawl(keyword_spec, limit=10)
-        
-        return IdsOut(
-            success=True,
-            ids=ids
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in keywords_to_ids orchestrator: {e}")
-        return IdsOut(
-            success=False,
-            ids=[]
-        )
-
-
-def _generate_chat_reply(keyword_spec: KeywordSpec, original_prompt: str) -> str:
-    """
-    Generate a helpful NPC-style reply based on the extracted keyword spec.
-    
-    Args:
-        keyword_spec: Extracted outfit requirements
-        original_prompt: User's original input
-        
-    Returns:
-        Friendly response string
+        Friendly reply string
     """
     theme = keyword_spec.theme
     style = keyword_spec.style
-    parts = keyword_spec.parts
-    color = keyword_spec.color
-    budget = keyword_spec.budget
     
-    # Start with acknowledgment
+    if item_count == 0:
+        return "Sorry, I couldn't find any matching items right now."
+    
+    # Build descriptive text
+    outfit_desc = theme
     if style:
-        reply = f"I found some great {style} {theme} options for you! "
+        outfit_desc = f"{style} {theme}"
+    
+    if item_count == 1:
+        return f"I found a great {outfit_desc} item for you!"
     else:
-        reply = f"I found some great {theme} outfit options for you! "
-    
-    # Add color mention if specified
-    if color:
-        reply += f"I'll focus on {color} items. "
-    
-    # Add budget consideration if specified
-    if budget:
-        reply += f"I'll keep it under {budget} Robux. "
-    
-    # Add parts information
-    if parts and len(parts) > 0:
-        if len(parts) == 1:
-            reply += f"I'll look for {parts[0]} items specifically. "
-        else:
-            parts_str = ", ".join(parts[:-1]) + f" and {parts[-1]}"
-            reply += f"I'll search for {parts_str} pieces. "
-    
-    # Add call to action
-    if not keyword_spec.style and theme not in ["casual", "unknown"]:
-        reply += "Would you like me to focus on a specific style like futuristic or medieval? "
-    elif not parts:
-        reply += "Would you like me to search for specific outfit parts? "
-    else:
-        reply += "Let me search for those items now!"
-    
-    return reply
+        return f"Your {outfit_desc} outfit is ready! I found {item_count} great items for you."
 
 
 # Development/testing functions
 def test_chat_orchestrator():
     """Test the chat orchestrator with sample inputs."""
-    test_cases = [
-        ("I want a futuristic knight outfit", 12345),
-        ("red ninja gear under 500 robux", 67890),
-        ("casual shirt and pants", 11111)
-    ]
+    import asyncio
     
-    for prompt, user_id in test_cases:
-        print(f"\nTesting: '{prompt}'")
-        result = chat(prompt, user_id)
-        print(f"Reply: {result.reply}")
-        print(f"KeywordSpec: {result.keywordSpec.model_dump()}")
+    async def run_tests():
+        test_cases = [
+            ("I want a futuristic knight outfit", 12345),
+            ("red ninja gear under 500 robux", 67890),
+            ("casual shirt and pants", 11111)
+        ]
+        
+        for prompt, user_id in test_cases:
+            print(f"\nTesting: '{prompt}'")
+            result = await chat(prompt, user_id)
+            print(f"Success: {result.success}")
+            print(f"Reply: {result.reply}")
+            print(f"Items: {len(result.outfit)}")
+            if result.outfit:
+                for item in result.outfit[:3]:  # Show first 3 items
+                    print(f"  - {item.assetId} ({item.type})")
+    
+    asyncio.run(run_tests())
 
 
 if __name__ == "__main__":
     # Run tests if executed directly
-    import asyncio
-    
     print("Testing chat orchestrator...")
     test_chat_orchestrator()
-    
-    print("\nTesting keywords_to_ids orchestrator...")
-    async def test_keywords_to_ids():
-        test_spec = {"theme": "knight", "style": "futuristic", "parts": ["Back Accessory"]}
-        result = await keywords_to_ids(test_spec)
-        print(f"IDs result: {result.model_dump()}")
-    
-    asyncio.run(test_keywords_to_ids())

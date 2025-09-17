@@ -1,5 +1,5 @@
 """Pydantic models for API contracts."""
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
 
@@ -12,6 +12,12 @@ class KeywordSpec(BaseModel):
     budget: Optional[int] = None
 
 
+class OutfitItem(BaseModel):
+    """A single outfit item from Roblox catalog."""
+    assetId: str
+    type: str = "Unknown"
+
+
 class ChatIn(BaseModel):
     """Input model for chat endpoint."""
     prompt: str
@@ -20,10 +26,10 @@ class ChatIn(BaseModel):
 
 class ChatOut(BaseModel):
     """Output model for chat endpoint."""
-    success: bool = True
+    success: bool
     user_id: int
     reply: str
-    keywordSpec: KeywordSpec
+    outfit: List[OutfitItem]
 
 
 class IdsOut(BaseModel):

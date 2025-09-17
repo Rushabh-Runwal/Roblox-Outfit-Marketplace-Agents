@@ -10,16 +10,7 @@ A FastAPI backend powered by CAMEL agents that helps users find Roblox catalog i
 pip install -r requirements.txt
 ```
 
-### 2. Environment Setup
-
-Copy the example environment file and configure your API keys:
-
-```bash
-cp .env.example .env
-# Edit .env with your API keys
-```
-
-### 3. Run the Server
+### 2. Run the Server
 
 ```bash
 uvicorn server.main:app --reload --port 8000
@@ -27,16 +18,22 @@ uvicorn server.main:app --reload --port 8000
 
 The API will be available at `http://localhost:8000`
 
+### 3. Use Terminal Chat (Optional)
+
+```bash
+python scripts/chat_cli.py
+```
+
 ## API Endpoints
 
 ### POST /chat
 
-Chat with the agent to get outfit recommendations.
+Chat with the agent to get outfit recommendations with actual Roblox catalog items.
 
 **Request:**
 ```json
 {
-  "prompt": "I want a futuristic knight outfit",
+  "prompt": "I want a knight outfit",
   "user_id": 7470350941
 }
 ```
@@ -46,14 +43,17 @@ Chat with the agent to get outfit recommendations.
 {
   "success": true,
   "user_id": 7470350941,
-  "reply": "I found some great futuristic knight options! Would you like me to search for specific parts?",
-  "keywordSpec": {
-    "theme": "knight",
-    "style": "futuristic",
-    "parts": ["Back Accessory"],
-    "color": null,
-    "budget": null
-  }
+  "reply": "Your knight outfit is ready! I found 6 great items for you.",
+  "outfit": [
+    {
+      "assetId": "505526012",
+      "type": "Pants"
+    },
+    {
+      "assetId": "91950361017105", 
+      "type": "Back Accessory"
+    }
+  ]
 }
 ```
 
@@ -64,47 +64,23 @@ curl -X POST "http://localhost:8000/chat" \
   -d '{"prompt":"I want a futuristic knight outfit","user_id":7470350941}'
 ```
 
-### POST /keywords-to-ids
-
-Convert keyword specifications to Roblox catalog item IDs.
-
-**Request:**
-```json
-{
-  "theme": "knight",
-  "style": "futuristic",
-  "parts": ["Back Accessory"]
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "ids": ["91950361017105", "505526012", "..."]
-}
-```
-
-**Example cURL:**
-```bash
-curl -X POST "http://localhost:8000/keywords-to-ids" \
-  -H "Content-Type: application/json" \
-  -d '{"theme":"knight","style":"futuristic","parts":["Back Accessory"]}'
-```
-
 ## Project Structure
 
 ```
 agents/
-  __init__.py              # Package initialization
-  contracts.py             # Pydantic models for API contracts
-  conversation_agent.py    # CAMEL agent for chat processing
-  firecrawl_agent.py      # Firecrawl integration for web scraping
-  orchestrator.py         # Orchestrates agent interactions
+  __init__.py                # Package initialization
+  contracts.py               # Pydantic models for API contracts
+  conversation_agent.py      # CAMEL agent for chat processing
+  roblox_catalog_client.py   # Roblox catalog API integration
+  light_ranker.py           # Item ranking and diversity logic
+  orchestrator.py           # Orchestrates agent interactions
 
 server/
-  __init__.py             # Package initialization
-  main.py                 # FastAPI application and endpoints
+  __init__.py               # Package initialization
+  main.py                   # FastAPI application and endpoints
+
+scripts/
+  chat_cli.py              # Terminal chat interface
 ```
 
 ## Dependencies
