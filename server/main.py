@@ -34,22 +34,8 @@ async def root():
 async def chat(chat_input: ChatIn) -> ChatOut:
     """Chat endpoint to process user prompts and return outfit recommendations."""
     try:
-        # TODO: Implement orchestrator.chat() in Issue 4
-        # For now, return a placeholder response
-        keyword_spec = KeywordSpec(
-            theme="placeholder",
-            style="temporary",
-            parts=["Head", "Shirt", "Pants"],
-            color="blue",
-            budget=1000
-        )
-        
-        return ChatOut(
-            success=True,
-            user_id=chat_input.user_id,
-            reply="Chat endpoint is not yet implemented. Please wait for Issue 4.",
-            keywordSpec=keyword_spec
-        )
+        from agents.orchestrator import chat as orchestrator_chat
+        return orchestrator_chat(chat_input.prompt, chat_input.user_id)
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -59,12 +45,8 @@ async def chat(chat_input: ChatIn) -> ChatOut:
 async def keywords_to_ids(keyword_spec: KeywordSpec) -> IdsOut:
     """Convert KeywordSpec to Roblox catalog item IDs."""
     try:
-        # TODO: Implement orchestrator.keywords_to_ids() in Issue 4
-        # For now, return a placeholder response
-        return IdsOut(
-            success=True,
-            ids=["placeholder_id_1", "placeholder_id_2"]
-        )
+        from agents.orchestrator import keywords_to_ids as orchestrator_keywords_to_ids
+        return await orchestrator_keywords_to_ids(keyword_spec.model_dump())
     except Exception as e:
         logger.error(f"Error in keywords-to-ids endpoint: {e}")
         # Return 502 on Firecrawl failure as specified
