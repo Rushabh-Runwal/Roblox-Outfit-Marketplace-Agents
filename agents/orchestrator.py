@@ -32,7 +32,7 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
         
         # Step 1: Run Conversation Agent
         agent_result = run_conversation_agent(prompt, USER_CTX[user_id])
-        
+        logger.info(f"Agent result: {agent_result}")
         # Step 2: Handle agent response
         if agent_result.get("action") == "clarify":
             # Return clarifying question
@@ -61,22 +61,16 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
             
             # Convert to OutfitItem objects
             outfit_items = [OutfitItem(**item) for item in items]
-            
-            if not outfit_items:
-                return ChatOut(
-                    success=False,
-                    user_id=user_id,
-                    reply="Sorry, I couldn't find any matching items right now. Try being more specific or adjusting your requirements.",
-                    outfit=[]
-                )
-            
+        
             # Generate successful reply
-            item_count = len(outfit_items)
-            if item_count == 1:
-                reply = "I found a great item for you!"
-            else:
-                reply = f"Great! I found {item_count} items that match your request."
-            
+            reply = agent_result["reply"]
+            if not outfit_items:
+                item_count = len(outfit_items)
+                if item_count == 1:
+                    reply = "I found a great item for you!"
+                else:
+                    reply = f"Great! I found {item_count} items that match your request."
+                
             return ChatOut(
                 success=True,
                 user_id=user_id,

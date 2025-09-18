@@ -1,17 +1,17 @@
 """Conversation agent using CAMEL for Roblox catalog tool decisions."""
 import json
 import re
+import logging
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 from camel.agents import ChatAgent
 from camel.messages import BaseMessage
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType, ModelType
-from agents.param_helpers import parse_price, detect_subcategory, detect_genre
 
 # Load environment variables from .env file
 load_dotenv()
-
+logger = logging.getLogger(__name__)
 
 def run_conversation_agent(prompt: str, memory: Dict[str, Any]) -> Dict[str, Any]:
     """Run conversation agent to decide parameters and call tool.
@@ -24,10 +24,11 @@ def run_conversation_agent(prompt: str, memory: Dict[str, Any]) -> Dict[str, Any
         Dict with either {"action": "search", "params": {...}} or {"action": "clarify", "reply": "..."}
     """
     system_prompt = """You are a Roblox stylist assistant. Your task:
-1) Understand the user's outfit request.
-2) Decide efficient Roblox Catalog API parameters.
-3) Call the tool `roblox_search` with a strict schema.
-4) Return a short reply + up to 10 items mapped to {assetId, type}.
+1) Reply to general chit-chat briefly and politely, then refocus on outfit requests. provide greetings if user initiates chat.
+2) Understand the user's outfit request.
+3) Decide efficient Roblox Catalog API parameters.
+4) Call the tool `roblox_search` with a strict schema.
+5) Return a short reply + up to 10 items mapped to {assetId, type}.
 
 Tool: roblox_search(Keyword?: string, Limit: int, Category?: int, Subcategory?: int, Genres?: int, MinPrice?: int, MaxPrice?: int)
 - Always set Limit=10.
@@ -83,7 +84,7 @@ Respond with JSON in one of these formats:
     try:
         model = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI,
-            model_type=ModelType.GPT_3_5_TURBO,
+            model_type=ModelType.GPT_4O_MINI,
             model_config_dict={"temperature": 0.1}
         )
         
@@ -112,39 +113,9 @@ Respond with JSON in one of these formats:
                 result["params"]["Limit"] = 10
             return result
         except (json.JSONDecodeError, ValueError):
-            # Fall back to rule-based parsing
-            return _fallback_parse(prompt)
+            return response.msg.content
             
     except Exception:
         # Fall back to rule-based parsing if OpenAI unavailable
-        return _fallback_parse(prompt)
-
-
-def _fallback_parse(prompt: str) -> Dict[str, Any]:
-    """Fallback rule-based parameter extraction."""
-    params = {"Limit": 10}
-    
-    # Parse price
-    price_info = parse_price(prompt)
-    params.update(price_info)
-    
-    # Detect subcategory
-    subcategory = detect_subcategory(prompt)
-    if subcategory:
-        params["Subcategory"] = subcategory
-        
-    # Detect genre
-    genre = detect_genre(prompt)
-    if genre:
-        params["Genres"] = genre
-    
-    # Add keyword if no specific filters found
-    if not subcategory and not genre:
-        # Extract potential keywords (simple approach)
-        words = re.findall(r'\b\w+\b', prompt.lower())
-        outfit_words = [w for w in words if len(w) > 2 and w not in ['the', 'and', 'for', 'with', 'want', 'need']]
-        if outfit_words:
-            params["Keyword"] = ' '.join(outfit_words[:3])  # Take first few words
-    
-    return {"action": "search", "params": params}
+        logger.warning("OpenAI model unavailable, using rule-based parsing.")
 
