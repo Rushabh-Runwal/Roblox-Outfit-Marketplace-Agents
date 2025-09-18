@@ -1,6 +1,6 @@
 # Roblox Outfit Marketplace Agents
 
-A FastAPI backend powered by CAMEL agents that helps users find Roblox catalog items based on natural language descriptions. The system uses intelligent parameter detection and the Roblox Catalog API to provide relevant outfit recommendations.
+A FastAPI backend powered by CAMEL agents that helps users find Roblox catalog items based on natural language descriptions. The system uses a registered CAMEL FunctionTool to call the Roblox Catalog API intelligently, with the conversation agent deciding optimal search parameters and returning up to 10 outfit items. Purchases happen in-game through the official Roblox platform.
 
 ## Quick Start
 
@@ -71,6 +71,9 @@ Chat with the agent to get outfit recommendations with actual Roblox catalog ite
 ```
 
 **Features:**
+- CAMEL FunctionTool integration for intelligent catalog search
+- Conversation agent decides parameters and calls the **Roblox Catalog tool**
+- Up to 10 items per response with {assetId, type} format
 - Intelligent parameter detection (price ranges, item types, genres)
 - Conversation memory (say "more" for additional items)
 - Clarifying questions when requests are ambiguous
