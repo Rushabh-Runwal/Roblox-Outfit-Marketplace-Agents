@@ -3,15 +3,6 @@ from typing import Optional, List
 from pydantic import BaseModel
 
 
-class KeywordSpec(BaseModel):
-    """Specification for outfit keywords and requirements."""
-    theme: str
-    style: Optional[str] = None
-    parts: Optional[list[str]] = None
-    color: Optional[str] = None
-    budget: Optional[int] = None
-
-
 class OutfitItem(BaseModel):
     """A single outfit item from Roblox catalog."""
     assetId: str
