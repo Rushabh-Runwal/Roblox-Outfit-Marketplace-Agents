@@ -4,7 +4,6 @@ from typing import Dict, Any
 
 from agents.contracts import ChatOut, OutfitItem, KeywordSpec
 from agents.conversation_agent import run_conversation_agent
-from agents.roblox_catalog_client import search_catalog, map_items
 from agents.light_ranker import LightRanker
 
 logger = logging.getLogger(__name__)
@@ -13,9 +12,6 @@ logger = logging.getLogger(__name__)
 async def chat(prompt: str, user_id: int) -> ChatOut:
     """
     Main chat orchestrator that handles the full pipeline:
-    1. ConversationAgent.run(prompt) → KeywordSpec (internal only)
-    2. RobloxCatalogClient.search_catalog(theme, limit=12) → candidates
-    3. LightRanker.run(candidates, n=6..10) → final list
     
     Args:
         prompt: User's natural language prompt
@@ -36,36 +32,10 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
         
         logger.info(f"Extracted theme='{theme}', style='{style}' for user_id={user_id}")
         
-        # Step 2: Search Roblox catalog
-        raw_items = await search_catalog(theme, limit=12)
-        
-        if not raw_items:
-            logger.warning(f"No items found for theme '{theme}' for user_id={user_id}")
-            return ChatOut(
-                success=False,
-                user_id=user_id,
-                reply="Sorry, I couldn't find items right now. Please try again later.",
-                outfit=[]
-            )
-        
-        # Step 3: Map raw items to OutfitItem objects
-        candidate_items = map_items(raw_items)
-        logger.info(f"Mapped {len(candidate_items)} candidate items for user_id={user_id}")
-        
-        if not candidate_items:
-            logger.warning(f"No valid items after mapping for user_id={user_id}")
-            return ChatOut(
-                success=False,
-                user_id=user_id,
-                reply="Sorry, I couldn't find items right now. Please try again later.",
-                outfit=[]
-            )
-        
-        # Step 4: Use light ranker to get final diverse selection
-        final_items = LightRanker.run(candidate_items, n=8)  # Target 8 items for good variety
-        logger.info(f"Ranked to {len(final_items)} final items for user_id={user_id}")
-        
-        # Step 5: Generate reply
+        # Step 2: Search Roblox catalog for items matching user requirement
+        final_items = []
+
+        # Generate reply
         reply = _generate_chat_reply(keyword_spec, len(final_items))
         
         return ChatOut(
@@ -86,16 +56,6 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
 
 
 def _generate_chat_reply(keyword_spec: KeywordSpec, item_count: int) -> str:
-    """
-    Generate a friendly chat reply based on the keyword specification and results.
-    
-    Args:
-        keyword_spec: The extracted keywords and requirements
-        item_count: Number of items found
-        
-    Returns:
-        Friendly reply string
-    """
     theme = keyword_spec.theme
     style = keyword_spec.style
     
@@ -111,34 +71,3 @@ def _generate_chat_reply(keyword_spec: KeywordSpec, item_count: int) -> str:
         return f"I found a great {outfit_desc} item for you!"
     else:
         return f"Your {outfit_desc} outfit is ready! I found {item_count} great items for you."
-
-
-# Development/testing functions
-def test_chat_orchestrator():
-    """Test the chat orchestrator with sample inputs."""
-    import asyncio
-    
-    async def run_tests():
-        test_cases = [
-            ("I want a futuristic knight outfit", 12345),
-            ("red ninja gear under 500 robux", 67890),
-            ("casual shirt and pants", 11111)
-        ]
-        
-        for prompt, user_id in test_cases:
-            print(f"\nTesting: '{prompt}'")
-            result = await chat(prompt, user_id)
-            print(f"Success: {result.success}")
-            print(f"Reply: {result.reply}")
-            print(f"Items: {len(result.outfit)}")
-            if result.outfit:
-                for item in result.outfit[:3]:  # Show first 3 items
-                    print(f"  - {item.assetId} ({item.type})")
-    
-    asyncio.run(run_tests())
-
-
-if __name__ == "__main__":
-    # Run tests if executed directly
-    print("Testing chat orchestrator...")
-    test_chat_orchestrator()

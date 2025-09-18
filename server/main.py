@@ -1,8 +1,12 @@
 """FastAPI main application."""
 import logging
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from agents.contracts import ChatIn, ChatOut
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

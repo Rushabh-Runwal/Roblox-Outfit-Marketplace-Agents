@@ -5,6 +5,10 @@ import json
 import httpx
 import sys
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 async def chat_with_agent(prompt: str, user_id: int = 7470350941) -> Dict[str, Any]:
@@ -82,7 +86,7 @@ async def main():
     while True:
         try:
             # Get user input
-            prompt = input("👤 You: ").strip()
+            prompt = input(" You: ").strip()
             
             if not prompt:
                 continue
