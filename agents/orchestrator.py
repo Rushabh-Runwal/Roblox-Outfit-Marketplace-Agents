@@ -48,13 +48,13 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
             params = agent_result["params"]
             params["Limit"] = 10
             
-            logger.info(f"Searching with params: {params} for user_id={user_id}")
+            logger.info(f"Tool call with params: {params} for user_id={user_id}")
             
             # Call Roblox catalog tool
             raw_items = await roblox_search(**params)
             items = map_items(raw_items)
             
-            logger.info(f"Found {len(items)} items for user_id={user_id}")
+            logger.info(f"Found {len(items)} items for user_id={user_id} with final params: {params}")
             
             # Save last params for continuation
             USER_CTX[user_id]["last_params"] = params
@@ -63,8 +63,15 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
             outfit_items = [OutfitItem(**item) for item in items]
         
             # Generate successful reply
-            reply = agent_result["reply"]
             if not outfit_items:
+                reply = "I couldn't find any items matching your criteria. Try being more specific or adjusting your requirements."
+                return ChatOut(
+                    success=False,
+                    user_id=user_id,
+                    reply=reply,
+                    outfit=[]
+                )
+            else:
                 item_count = len(outfit_items)
                 if item_count == 1:
                     reply = "I found a great item for you!"
