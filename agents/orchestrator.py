@@ -3,18 +3,15 @@ import logging
 from typing import Dict, Any
 
 from agents.contracts import ChatOut, OutfitItem
-from agents.conversation_agent import run_conversation_agent
-from agents.roblox_catalog_tool import roblox_search, map_items
+from agents.conversation_agent import run_conversation_agent, apply_plan
+from agents.memory import get_session
 
 logger = logging.getLogger(__name__)
-
-# Simple in-memory user context storage
-USER_CTX: Dict[int, Dict[str, Any]] = {}
 
 
 async def chat(prompt: str, user_id: int) -> ChatOut:
     """
-    Main chat orchestrator that handles the full pipeline:
+    Main chat orchestrator that handles the full pipeline with session management.
     
     Args:
         prompt: User's natural language prompt
@@ -24,62 +21,63 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
         ChatOut with success status, reply, and outfit items
     """
     try:
-        logger.info(f"Processing chat request: user_id={user_id}, prompt_length={len(prompt)}")
+        logger.info(f"Chat request: user_id={user_id}, prompt_length={len(prompt)}")
         
-        # Initialize user context if not exists
-        if user_id not in USER_CTX:
-            USER_CTX[user_id] = {"last_params": None}
+        # Get user session
+        session = get_session(user_id)
         
         # Step 1: Run Conversation Agent
-        agent_result = run_conversation_agent(prompt, USER_CTX[user_id])
-        logger.info(f"Agent result: {agent_result}")
-        # Step 2: Handle agent response
-        if agent_result.get("action") == "clarify":
-            # Return clarifying question
+        agent_result = run_conversation_agent(prompt, user_id)
+        action = agent_result.get("action")
+        logger.info(f"Agent action: {action}, user_id={user_id}")
+        
+        # Step 2: Handle agent response based on action
+        reply = agent_result.get("reply", "")
+        
+        if action in ["greet", "clarify"]:
+            # Return response without tools
+            logger.info(f"Action={action}: returning reply without tools, user_id={user_id}")
             return ChatOut(
                 success=True,
                 user_id=user_id,
-                reply=agent_result["reply"],
+                reply=reply,
                 outfit=[]
             )
         
-        elif agent_result.get("action") == "search":
-            # Enforce Limit=10 and perform search
-            params = agent_result["params"]
-            params["Limit"] = 10
+        elif action in ["new_outfit", "replace"]:
+            # Execute plan and update session
+            plan = agent_result.get("plan", [])
+            tool_calls_used = []
             
-            logger.info(f"Tool call with params: {params} for user_id={user_id}")
+            if plan:
+                # Track tool names for logging
+                tool_calls_used = [step["tool"] for step in plan]
+                
+                # Execute tools in plan
+                await apply_plan(session, plan)
+                
+                logger.info(f"Applied plan: tools={tool_calls_used}, user_id={user_id}")
             
-            # Call Roblox catalog tool
-            raw_items = await roblox_search(**params)
-            items = map_items(raw_items)
+            # Build full outfit from session
+            outfit_items = []
+            for slot, asset_id in session.current_outfit.items.items():
+                outfit_items.append(OutfitItem(assetId=asset_id, type=slot))
             
-            logger.info(f"Found {len(items)} items for user_id={user_id} with final params: {params}")
-            
-            # Save last params for continuation
-            USER_CTX[user_id]["last_params"] = params
-            
-            # Convert to OutfitItem objects
-            outfit_items = [OutfitItem(**item) for item in items]
-        
-            # Generate successful reply
+            # Generate appropriate reply
             if not outfit_items:
                 reply = "I couldn't find any items matching your criteria. Try being more specific or adjusting your requirements."
-                return ChatOut(
-                    success=False,
-                    user_id=user_id,
-                    reply=reply,
-                    outfit=[]
-                )
+                success = False
             else:
-                item_count = len(outfit_items)
-                if item_count == 1:
-                    reply = "I found a great item for you!"
+                if action == "replace":
+                    reply = f"Updated your outfit! Here's your complete look with {len(outfit_items)} items."
                 else:
-                    reply = f"Great! I found {item_count} items that match your request."
-                
+                    reply = f"Here's your {len(outfit_items)}-piece outfit! What do you think?"
+                success = True
+            
+            logger.info(f"Final result: action={action}, tools_used={tool_calls_used}, outfit_size={len(outfit_items)}, user_id={user_id}")
+            
             return ChatOut(
-                success=True,
+                success=success,
                 user_id=user_id,
                 reply=reply,
                 outfit=outfit_items
@@ -87,6 +85,7 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
         
         else:
             # Unknown action
+            logger.warning(f"Unknown action: {action}, user_id={user_id}")
             return ChatOut(
                 success=False,
                 user_id=user_id,
