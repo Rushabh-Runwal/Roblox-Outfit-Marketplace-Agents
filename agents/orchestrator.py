@@ -2,11 +2,14 @@
 import logging
 from typing import Dict, Any
 
-from agents.contracts import ChatOut, OutfitItem, KeywordSpec
+from agents.contracts import ChatOut, OutfitItem
 from agents.conversation_agent import run_conversation_agent
-from agents.light_ranker import LightRanker
+from agents.roblox_catalog_tool import roblox_search, map_items
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory user context storage
+USER_CTX: Dict[int, Dict[str, Any]] = {}
 
 
 async def chat(prompt: str, user_id: int) -> ChatOut:
@@ -23,27 +26,72 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
     try:
         logger.info(f"Processing chat request: user_id={user_id}, prompt_length={len(prompt)}")
         
-        # Step 1: Extract keywords using conversation agent
-        keyword_spec_dict = run_conversation_agent(prompt)
-        keyword_spec = KeywordSpec(**keyword_spec_dict)
+        # Initialize user context if not exists
+        if user_id not in USER_CTX:
+            USER_CTX[user_id] = {"last_params": None}
         
-        theme = keyword_spec.theme
-        style = keyword_spec.style
+        # Step 1: Run Conversation Agent
+        agent_result = run_conversation_agent(prompt, USER_CTX[user_id])
         
-        logger.info(f"Extracted theme='{theme}', style='{style}' for user_id={user_id}")
+        # Step 2: Handle agent response
+        if agent_result.get("action") == "clarify":
+            # Return clarifying question
+            return ChatOut(
+                success=True,
+                user_id=user_id,
+                reply=agent_result["reply"],
+                outfit=[]
+            )
         
-        # Step 2: Search Roblox catalog for items matching user requirement
-        final_items = []
-
-        # Generate reply
-        reply = _generate_chat_reply(keyword_spec, len(final_items))
+        elif agent_result.get("action") == "search":
+            # Enforce Limit=10 and perform search
+            params = agent_result["params"]
+            params["Limit"] = 10
+            
+            logger.info(f"Searching with params: {params} for user_id={user_id}")
+            
+            # Call Roblox catalog tool
+            raw_items = await roblox_search(**params)
+            items = map_items(raw_items)
+            
+            logger.info(f"Found {len(items)} items for user_id={user_id}")
+            
+            # Save last params for continuation
+            USER_CTX[user_id]["last_params"] = params
+            
+            # Convert to OutfitItem objects
+            outfit_items = [OutfitItem(**item) for item in items]
+            
+            if not outfit_items:
+                return ChatOut(
+                    success=False,
+                    user_id=user_id,
+                    reply="Sorry, I couldn't find any matching items right now. Try being more specific or adjusting your requirements.",
+                    outfit=[]
+                )
+            
+            # Generate successful reply
+            item_count = len(outfit_items)
+            if item_count == 1:
+                reply = "I found a great item for you!"
+            else:
+                reply = f"Great! I found {item_count} items that match your request."
+            
+            return ChatOut(
+                success=True,
+                user_id=user_id,
+                reply=reply,
+                outfit=outfit_items
+            )
         
-        return ChatOut(
-            success=True,
-            user_id=user_id,
-            reply=reply,
-            outfit=final_items
-        )
+        else:
+            # Unknown action
+            return ChatOut(
+                success=False,
+                user_id=user_id,
+                reply="I'm not sure how to help with that. Could you try rephrasing your request?",
+                outfit=[]
+            )
         
     except Exception as e:
         logger.error(f"Error in chat orchestrator for user_id={user_id}: {e}")
@@ -53,21 +101,3 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
             reply="I'm sorry, I had trouble processing your request. Could you try again?",
             outfit=[]
         )
-
-
-def _generate_chat_reply(keyword_spec: KeywordSpec, item_count: int) -> str:
-    theme = keyword_spec.theme
-    style = keyword_spec.style
-    
-    if item_count == 0:
-        return "Sorry, I couldn't find any matching items right now."
-    
-    # Build descriptive text
-    outfit_desc = theme
-    if style:
-        outfit_desc = f"{style} {theme}"
-    
-    if item_count == 1:
-        return f"I found a great {outfit_desc} item for you!"
-    else:
-        return f"Your {outfit_desc} outfit is ready! I found {item_count} great items for you."

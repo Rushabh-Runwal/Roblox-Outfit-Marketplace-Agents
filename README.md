@@ -1,6 +1,6 @@
 # Roblox Outfit Marketplace Agents
 
-A FastAPI backend powered by CAMEL agents that helps users find Roblox catalog items based on natural language descriptions.
+A FastAPI backend powered by CAMEL agents that helps users find Roblox catalog items based on natural language descriptions. The system uses intelligent parameter detection and the Roblox Catalog API to provide relevant outfit recommendations.
 
 ## Quick Start
 
@@ -10,7 +10,16 @@ A FastAPI backend powered by CAMEL agents that helps users find Roblox catalog i
 pip install -r requirements.txt
 ```
 
-### 2. Run the Server
+### 2. Environment Setup (Optional)
+
+For enhanced AI capabilities, create a `.env` file:
+```bash
+OPENAI_API_KEY=sk-your-openai-api-key-here
+```
+
+Without an API key, the system uses fallback rule-based parsing.
+
+### 3. Run the Server
 
 ```bash
 uvicorn server.main:app --reload --port 8000
@@ -18,7 +27,7 @@ uvicorn server.main:app --reload --port 8000
 
 The API will be available at `http://localhost:8000`
 
-### 3. Use Terminal Chat (Optional)
+### 4. Use Terminal Chat (Optional)
 
 ```bash
 python scripts/chat_cli.py
@@ -33,7 +42,7 @@ Chat with the agent to get outfit recommendations with actual Roblox catalog ite
 **Request:**
 ```json
 {
-  "prompt": "I want a knight outfit",
+  "prompt": "I want a medieval knight outfit under 200 robux",
   "user_id": 7470350941
 }
 ```
@@ -43,7 +52,7 @@ Chat with the agent to get outfit recommendations with actual Roblox catalog ite
 {
   "success": true,
   "user_id": 7470350941,
-  "reply": "Your knight outfit is ready! I found 6 great items for you.",
+  "reply": "Great! I found 5 items that match your request.",
   "outfit": [
     {
       "assetId": "505526012",
@@ -52,10 +61,20 @@ Chat with the agent to get outfit recommendations with actual Roblox catalog ite
     {
       "assetId": "91950361017105", 
       "type": "Back Accessory"
+    },
+    {
+      "assetId": "123456789",
+      "type": "Hat"
     }
   ]
 }
 ```
+
+**Features:**
+- Intelligent parameter detection (price ranges, item types, genres)
+- Conversation memory (say "more" for additional items)
+- Clarifying questions when requests are ambiguous
+- Up to 10 items per response
 
 **Example cURL:**
 ```bash
@@ -64,16 +83,18 @@ curl -X POST "http://localhost:8000/chat" \
   -d '{"prompt":"I want a futuristic knight outfit","user_id":7470350941}'
 ```
 
+**Note:** The backend only returns Roblox asset IDs and types. Actual purchases happen in-game through the official Roblox platform.
+
 ## Project Structure
 
 ```
 agents/
   __init__.py                # Package initialization
   contracts.py               # Pydantic models for API contracts
-  conversation_agent.py      # CAMEL agent for chat processing
-  roblox_catalog_client.py   # Roblox catalog API integration
-  light_ranker.py           # Item ranking and diversity logic
-  orchestrator.py           # Orchestrates agent interactions
+  conversation_agent.py      # CAMEL agent for chat processing and tool decisions
+  roblox_catalog_tool.py     # Roblox catalog API integration
+  param_helpers.py           # Price parsing and item type detection
+  orchestrator.py            # Orchestrates agent interactions
 
 server/
   __init__.py               # Package initialization
