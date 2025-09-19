@@ -15,9 +15,47 @@ logger = logging.getLogger(__name__)
 
 # Roblox API Constants
 ROBLOX_API_URL = "https://catalog.roblox.com/v1/search/items/details"
-LIMIT = 10
+LIMIT = 10  # API only accepts 10, 28, or 30
 
-# Subcategory mappings based on system prompt
+# Category mappings based on Roblox catalog structure
+CATEGORIES = {
+    "Clothing": 3,
+    "BodyParts": 4,
+    "Gear": 5,
+    "Accessories": 11,
+    "AvatarAnimations": 12
+}
+
+# Subcategory mappings with their parent categories
+# Based on API testing - only certain combinations work
+SUBCATEGORY_MAPPINGS = {
+    # Accessories subcategories (Category 11) 
+    "HeadAccessories": {"category": 11, "subcategory": 54},  
+    "FaceAccessories": {"category": 11, "subcategory": 21},  
+    "NeckAccessories": {"category": 11, "subcategory": 22},  
+    "ShoulderAccessories": {"category": 11, "subcategory": 23}, 
+    "FrontAccessories": {"category": 11, "subcategory": 24}, 
+    "BackAccessories": {"category": 11, "subcategory": 25},  
+    "WaistAccessories": {"category": 11, "subcategory": 26}, 
+    
+    # These don't work with Category 11 - fallback to subcategory only
+    "Hats": {"category": 11, "subcategory": 54},  
+    "Faces": {"category": 11, "subcategory": 21},  
+    "HairAccessories": {"category": 4, "subcategory": 20}, 
+    
+    # Clothing subcategories 
+    "TShirts": {"category": 3, "subcategory": 58},
+    "Shirts": {"category": 3, "subcategory": 59}, 
+    "Pants": {"category": 3, "subcategory": 60},  
+    
+    # Body Parts and Animations - need testing
+    "Heads": {"category": 4, "subcategory": 15},
+    "DynamicHeads": {"category": 4, "subcategory": 66},
+    "Bundles": {"category": 12, "subcategory": 37},
+    "EmoteAnimations": {"category": 12, "subcategory": 39}
+}
+
+# Legacy subcategories dict for backward compatibility
 SUBCATEGORIES = {
     "Featured": 0,
     "All": 1,
@@ -68,46 +106,43 @@ SUBCATEGORIES = {
     "DynamicHeads": 66
 }
 
-CATEGORIES = {
-    "Clothing": 3,
-    "BodyParts": 4,
-    "Gear": 5,
-    "Accessories": 11,
-    "AvatarAnimations": 12
-}
-
-# Part to subcategory mapping
+# Part to subcategory mapping with categories
 PART_SUBCATEGORY_MAP = {
-    "Head": [SUBCATEGORIES["Hats"], SUBCATEGORIES["HeadAccessories"]],
-    "Face": [SUBCATEGORIES["Faces"], SUBCATEGORIES["FaceAccessories"]],
-    "Hair": [SUBCATEGORIES["HairAccessories"]],
-    "Shirt": [SUBCATEGORIES["Shirts"], SUBCATEGORIES["ClassicShirts"]],
-    "TShirt": [SUBCATEGORIES["TShirts"], SUBCATEGORIES["ClassicTShirts"]],
-    "Pants": [SUBCATEGORIES["Pants"], SUBCATEGORIES["ClassicPants"]],
-    "Back Accessory": [SUBCATEGORIES["BackAccessories"]],
-    "Neck Accessory": [SUBCATEGORIES["NeckAccessories"]],
-    "Shoulder Accessory": [SUBCATEGORIES["ShoulderAccessories"]],
-    "Front Accessory": [SUBCATEGORIES["FrontAccessories"]],
-    "Waist Accessory": [SUBCATEGORIES["WaistAccessories"]],
-    "Head Bodypart": [SUBCATEGORIES["Heads"], SUBCATEGORIES["DynamicHeads"]],
-    "Bundle": [SUBCATEGORIES["Bundles"]],
-    "Emote": [SUBCATEGORIES["EmoteAnimations"]]
+    "Head": "Hats",
+    "Face": "Faces", 
+    "Hair": "HairAccessories",
+    "Shirt": "Shirts",
+    "TShirt": "TShirts",
+    "Pants": "Pants",
+    "Back Accessory": "BackAccessories",
+    "Neck Accessory": "NeckAccessories",
+    "Shoulder Accessory": "ShoulderAccessories",
+    "Front Accessory": "FrontAccessories",
+    "Waist Accessory": "WaistAccessories",
+    "Head Bodypart": "Heads",
+    "Bundle": "Bundles",
+    "Emote": "EmoteAnimations"
 }
 
 
 def make_roblox_api_call(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Make a call to the Roblox Catalog API"""
     try:
-        # Ensure we always limit to 10 items
+        # Ensure we always limit to 10 items (API only accepts 10, 28, or 30)
         params["Limit"] = LIMIT
         
         logger.info(f"Making Roblox API call with params: {params}")
         response = requests.get(ROBLOX_API_URL, params=params, timeout=10)
+        
+        # Log the full URL for debugging
+        logger.info(f"API URL: {response.url}")
+        
         response.raise_for_status()
         
         data = response.json()
         items = data.get("data", [])
         logger.info(f"Roblox API returned {len(items)} items")
+        
         # Transform to our format
         result = []
         for item in items[:LIMIT]:  # Ensure max 10 items
@@ -133,22 +168,28 @@ def fetch_outfit(parts: List[str], keyword: Optional[str] = None) -> List[Dict[s
     
     for part in parts:
         if part in PART_SUBCATEGORY_MAP:
-            subcategory = PART_SUBCATEGORY_MAP[part][0]  # Use first subcategory
-            
-            params = {
-                "Subcategory": subcategory,
-                "Limit": items_per_part
-            }
-            
-            if keyword:
-                params["Keyword"] = keyword
-            
-            items = make_roblox_api_call(params)
-            # Set correct type for each item
-            for item in items:
-                item["type"] = part
-            
-            all_items.extend(items)
+            subcategory_key = PART_SUBCATEGORY_MAP[part]
+            if subcategory_key in SUBCATEGORY_MAPPINGS:
+                mapping = SUBCATEGORY_MAPPINGS[subcategory_key]
+                
+                params = {
+                    "Subcategory": mapping["subcategory"],
+                    "Limit": items_per_part
+                }
+                
+                # Only add category if it exists in mapping
+                if "category" in mapping:
+                    params["Category"] = mapping["category"]
+                
+                if keyword:
+                    params["Keyword"] = keyword
+                
+                items = make_roblox_api_call(params)
+                # Set correct type for each item
+                for item in items:
+                    item["type"] = part
+                
+                all_items.extend(items)
     
     return all_items[:LIMIT]  # Ensure we don't exceed 10 total items
 
@@ -157,13 +198,14 @@ def fetch_outfit(parts: List[str], keyword: Optional[str] = None) -> List[Dict[s
 def fetch_headgear(keyword: Optional[str] = None, category: Optional[int] = None,
                   subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch headgear items (hats, helmets) from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["Hats"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["Hats"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -180,13 +222,14 @@ def fetch_headgear(keyword: Optional[str] = None, category: Optional[int] = None
 def fetch_face(keyword: Optional[str] = None, category: Optional[int] = None,
               subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch face items (faces, masks) from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["Faces"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["Faces"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -202,13 +245,14 @@ def fetch_face(keyword: Optional[str] = None, category: Optional[int] = None,
 def fetch_hair(keyword: Optional[str] = None, category: Optional[int] = None,
               subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch hair accessories from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["HairAccessories"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["HairAccessories"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -224,13 +268,14 @@ def fetch_hair(keyword: Optional[str] = None, category: Optional[int] = None,
 def fetch_shirt(keyword: Optional[str] = None, category: Optional[int] = None,
                subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch shirt items from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["Shirts"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["Shirts"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -246,13 +291,14 @@ def fetch_shirt(keyword: Optional[str] = None, category: Optional[int] = None,
 def fetch_tshirt(keyword: Optional[str] = None, category: Optional[int] = None,
                 subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch t-shirt items from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["TShirts"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["TShirts"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -268,13 +314,14 @@ def fetch_tshirt(keyword: Optional[str] = None, category: Optional[int] = None,
 def fetch_pants(keyword: Optional[str] = None, category: Optional[int] = None,
                subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch pants items from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["Pants"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["Pants"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -290,13 +337,14 @@ def fetch_pants(keyword: Optional[str] = None, category: Optional[int] = None,
 def fetch_back_accessory(keyword: Optional[str] = None, category: Optional[int] = None,
                         subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch back accessories (capes, wings, jetpacks) from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["BackAccessories"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["BackAccessories"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -312,13 +360,14 @@ def fetch_back_accessory(keyword: Optional[str] = None, category: Optional[int] 
 def fetch_neck_accessory(keyword: Optional[str] = None, category: Optional[int] = None,
                         subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch neck accessories (scarves, necklaces) from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["NeckAccessories"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["NeckAccessories"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -334,13 +383,14 @@ def fetch_neck_accessory(keyword: Optional[str] = None, category: Optional[int] 
 def fetch_shoulder_accessory(keyword: Optional[str] = None, category: Optional[int] = None,
                             subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch shoulder accessories (pauldrons) from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["ShoulderAccessories"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["ShoulderAccessories"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -356,13 +406,14 @@ def fetch_shoulder_accessory(keyword: Optional[str] = None, category: Optional[i
 def fetch_front_accessory(keyword: Optional[str] = None, category: Optional[int] = None,
                          subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch front accessories (chest plates, armor) from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["FrontAccessories"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["FrontAccessories"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -378,13 +429,14 @@ def fetch_front_accessory(keyword: Optional[str] = None, category: Optional[int]
 def fetch_waist_accessory(keyword: Optional[str] = None, category: Optional[int] = None,
                          subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch waist accessories (belts, tails) from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["WaistAccessories"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["WaistAccessories"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -400,13 +452,14 @@ def fetch_waist_accessory(keyword: Optional[str] = None, category: Optional[int]
 def fetch_head_bodypart(keyword: Optional[str] = None, category: Optional[int] = None,
                        subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch head body parts from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["Heads"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["Heads"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -422,13 +475,14 @@ def fetch_head_bodypart(keyword: Optional[str] = None, category: Optional[int] =
 def fetch_bundle(keyword: Optional[str] = None, category: Optional[int] = None,
                 subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch bundles from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["Bundles"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["Bundles"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     
@@ -444,13 +498,14 @@ def fetch_bundle(keyword: Optional[str] = None, category: Optional[int] = None,
 def fetch_emote(keyword: Optional[str] = None, category: Optional[int] = None,
                subcategory: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch emote animations from Roblox catalog"""
+    mapping = SUBCATEGORY_MAPPINGS["EmoteAnimations"]
+    
     params = {
-        "Subcategory": subcategory or SUBCATEGORIES["EmoteAnimations"],
+        "Category": category or mapping["category"],
+        "Subcategory": subcategory or mapping["subcategory"],
         "Limit": LIMIT
     }
     
-    if category:
-        params["Category"] = category
     if keyword:
         params["Keyword"] = keyword
     

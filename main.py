@@ -104,7 +104,7 @@ async def main():
     logger.info("You can now test the agent by providing catalog requests!")
     
     # Simple test to verify the agent works
-    test_input = "headgear for a knight"
+    test_input = "Find knight armor accessories - back cape, front chest plate, and shoulder armor"
     logger.info(f"Testing with input: '{test_input}'")
     
     try:
