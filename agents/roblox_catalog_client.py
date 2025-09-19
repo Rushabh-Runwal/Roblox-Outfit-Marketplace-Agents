@@ -2,6 +2,7 @@
 import asyncio
 import httpx
 from typing import Dict, Any, List
+from agents.config import DEV_MODE
 
 CATALOG_URL = "https://catalog.roblox.com/v1/search/items/details"
 REQUEST_TIMEOUT = 10
@@ -28,6 +29,54 @@ SUBCATEGORY_SLOT = {
     39: "Emote",
 }
 
+# Mock data for development mode
+MOCK_DATA = {
+    9: [  # Hats
+        {"id": 1001, "name": "Knight Helmet", "subcategory": 9},
+        {"id": 1002, "name": "Medieval Crown", "subcategory": 9},
+        {"id": 1003, "name": "Iron Helmet", "subcategory": 9},
+    ],
+    10: [  # Faces
+        {"id": 2001, "name": "Warrior Face", "subcategory": 10},
+        {"id": 2002, "name": "Noble Expression", "subcategory": 10},
+    ],
+    12: [  # Shirts
+        {"id": 3001, "name": "Knight Armor", "subcategory": 12},
+        {"id": 3002, "name": "Medieval Tunic", "subcategory": 12},
+        {"id": 3003, "name": "Chain Mail", "subcategory": 12},
+    ],
+    14: [  # Pants
+        {"id": 4001, "name": "Knight Leggings", "subcategory": 14},
+        {"id": 4002, "name": "Medieval Pants", "subcategory": 14},
+    ],
+    25: [  # Back Accessories
+        {"id": 5001, "name": "Knight Cape", "subcategory": 25},
+        {"id": 5002, "name": "Sword Sheath", "subcategory": 25},
+    ],
+    24: [  # Front Accessories
+        {"id": 6001, "name": "Chest Armor", "subcategory": 24},
+        {"id": 6002, "name": "Knight Emblem", "subcategory": 24},
+    ],
+    22: [  # Neck Accessories
+        {"id": 7001, "name": "Noble Necklace", "subcategory": 22},
+    ],
+    20: [  # Hair
+        {"id": 8001, "name": "Knight Hair", "subcategory": 20},
+    ]
+}
+
+
+def get_mock_data_for_subcategory(subcategory: int, keyword: str = None) -> List[Dict[str, Any]]:
+    """Get mock data for a specific subcategory, optionally filtered by keyword."""
+    items = MOCK_DATA.get(subcategory, [])
+    if keyword:
+        keyword_lower = keyword.lower()
+        # Match if any word in keyword appears in item name
+        keyword_words = keyword_lower.split()
+        items = [item for item in items 
+                if any(word in item["name"].lower() for word in keyword_words)]
+    return items
+
 
 async def catalog_search(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
@@ -39,6 +88,14 @@ async def catalog_search(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     Returns:
         List of raw catalog items from API response
     """
+    if DEV_MODE:
+        # Return mock data in development mode
+        subcategory = params.get("Subcategory")
+        keyword = params.get("Keyword", "")
+        mock_items = get_mock_data_for_subcategory(subcategory, keyword)
+        await asyncio.sleep(0.1)  # Simulate network delay
+        return mock_items
+    
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         for _ in range(RETRIES):
             try:

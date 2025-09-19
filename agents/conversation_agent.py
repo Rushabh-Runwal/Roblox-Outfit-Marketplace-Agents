@@ -105,25 +105,36 @@ async def apply_plan(session: SessionState, plan: list) -> list:
         "search_emotes": search_emotes,
     }
     
+    logger.info(f"Applying plan with {len(plan)} steps")
+    
     for step in plan:
         slot = step["slot"]
         tool_name = step["tool"]
         params = step["params"]
         
+        logger.info(f"Executing step: slot={slot}, tool={tool_name}, params={params}")
+        
         if tool_name in tool_map:
             try:
                 # Execute tool
                 items = await tool_map[tool_name](**params)
+                logger.info(f"Tool {tool_name} returned {len(items)} items: {items}")
                 all_items.extend(items)
                 
                 # Update session with first item (if any)
                 if items:
                     session.current_outfit.items[slot] = items[0]["assetId"]
                     session.last_params_by_slot[slot] = params
+                    logger.info(f"Updated outfit slot {slot} with assetId {items[0]['assetId']}")
+                else:
+                    logger.warning(f"No items returned from {tool_name}")
                     
             except Exception as e:
                 logger.error(f"Tool execution failed for {tool_name}: {e}")
+        else:
+            logger.error(f"Unknown tool: {tool_name}")
     
+    logger.info(f"Final outfit state: {session.current_outfit.items}")
     return all_items
 
 
