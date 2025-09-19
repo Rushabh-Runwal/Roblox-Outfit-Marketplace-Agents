@@ -44,7 +44,7 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
                 outfit=[]
             )
         
-        elif action in ["new_outfit", "replace"]:
+        elif action in ["new_outfit", "replace", "show_more"]:
             # Execute plan and update session
             plan = agent_result.get("plan", [])
             tool_calls_used = []
@@ -54,7 +54,7 @@ async def chat(prompt: str, user_id: int) -> ChatOut:
                 tool_calls_used = [step["tool"] for step in plan]
                 
                 # Execute tools in plan
-                await apply_plan(session, plan)
+                await apply_plan(session, plan, action)
                 
                 logger.info(f"Applied plan: tools={tool_calls_used}, user_id={user_id}")
             

@@ -35,6 +35,7 @@ class SessionState(BaseModel):
     """Per-user session state for outfit building."""
     current_outfit: Outfit = Outfit(items={})
     last_params_by_slot: Dict[str, dict] = {}  # slot -> last tool params used
+    last_index_by_slot: Dict[str, int] = {}    # slot -> last item index used (for "show more")
 
 
 class IdsOut(BaseModel):

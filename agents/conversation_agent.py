@@ -6,7 +6,7 @@ from camel.messages import BaseMessage
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType, ModelType
 from agents.tools import TOOLS
-from agents.stylist_agent import plan_tools, detect_target_slot
+from agents.stylist_agent import plan_tools, detect_target_slot, SLOT_TOOL_MAP
 from agents.memory import get_session
 from agents.contracts import SessionState, OutfitItem
 
@@ -66,13 +66,14 @@ def build_agent():
         return None
 
 
-async def apply_plan(session: SessionState, plan: list) -> list:
+async def apply_plan(session: SessionState, plan: list, action: str = "new_outfit") -> list:
     """
     Execute a stylist plan and update session outfit.
     
     Args:
         session: User session state
         plan: List of {"slot": str, "tool": str, "params": dict}
+        action: Type of action ("new_outfit", "replace", "show_more")
         
     Returns:
         List of all items from tool executions
@@ -105,7 +106,7 @@ async def apply_plan(session: SessionState, plan: list) -> list:
         "search_emotes": search_emotes,
     }
     
-    logger.info(f"Applying plan with {len(plan)} steps")
+    logger.info(f"Applying plan with {len(plan)} steps for action: {action}")
     
     for step in plan:
         slot = step["slot"]
@@ -121,11 +122,22 @@ async def apply_plan(session: SessionState, plan: list) -> list:
                 logger.info(f"Tool {tool_name} returned {len(items)} items: {items}")
                 all_items.extend(items)
                 
-                # Update session with first item (if any)
+                # Update session with appropriate item
                 if items:
-                    session.current_outfit.items[slot] = items[0]["assetId"]
+                    if action == "show_more" and slot in session.last_index_by_slot and len(items) > 1:
+                        # For show_more, try to get next item
+                        current_index = session.last_index_by_slot[slot]
+                        next_index = (current_index + 1) % len(items)
+                        session.current_outfit.items[slot] = items[next_index]["assetId"]
+                        session.last_index_by_slot[slot] = next_index
+                        logger.info(f"Show more: Updated outfit slot {slot} with item {next_index} (assetId {items[next_index]['assetId']})")
+                    else:
+                        # For new outfit or replace, use first item
+                        session.current_outfit.items[slot] = items[0]["assetId"]
+                        session.last_index_by_slot[slot] = 0
+                        logger.info(f"Updated outfit slot {slot} with assetId {items[0]['assetId']}")
+                    
                     session.last_params_by_slot[slot] = params
-                    logger.info(f"Updated outfit slot {slot} with assetId {items[0]['assetId']}")
                 else:
                     logger.warning(f"No items returned from {tool_name}")
                     
@@ -183,11 +195,57 @@ def run_conversation_agent(prompt: str, user_id: int) -> Dict[str, Any]:
     
     # Check for "more" requests
     if any(word in prompt_lower for word in ["more", "another", "different", "other"]):
-        # Try to reuse last params if available
-        if session.last_params_by_slot:
+        # For "more" requests, use a simplified slot detection
+        more_slot_keywords = {
+            "head": "Head",
+            "headgear": "Head", 
+            "helmet": "Head",
+            "hat": "Head",
+            "face": "Face",
+            "hair": "Hair",
+            "shirt": "Shirt",
+            "top": "Shirt",
+            "pants": "Pants",
+            "trousers": "Pants",
+            "back": "Back Accessory",
+            "cape": "Back Accessory",
+            "wings": "Back Accessory",
+            "neck": "Neck Accessory",
+            "necklace": "Neck Accessory",
+        }
+        
+        more_target_slot = None
+        for keyword, slot in more_slot_keywords.items():
+            if keyword in prompt_lower:
+                more_target_slot = slot
+                break
+        
+        if more_target_slot and more_target_slot in session.last_params_by_slot:
+            # Reuse last params for the specified slot
+            last_params = session.last_params_by_slot[more_target_slot].copy()
+            
+            return {
+                "action": "show_more",
+                "reply": f"I'll find more {more_target_slot.lower()} options for you!",
+                "plan": [{
+                    "slot": more_target_slot,
+                    "tool": SLOT_TOOL_MAP.get(more_target_slot, "search_hats"),
+                    "params": last_params
+                }],
+                "outfit": []
+            }
+        elif session.last_params_by_slot:
+            # Ask for clarification on which slot they want more of
+            available_slots = list(session.last_params_by_slot.keys())
             return {
                 "action": "clarify",
-                "reply": "Would you like more items similar to what I just found, or something completely different?",
+                "reply": f"Which item would you like more options for? I have suggestions for: {', '.join(available_slots).lower()}",
+                "outfit": []
+            }
+        else:
+            return {
+                "action": "clarify",
+                "reply": "I haven't made any suggestions yet. What kind of outfit are you looking for?",
                 "outfit": []
             }
     
