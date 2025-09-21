@@ -1,0 +1,6 @@
+type = "crossmint"
+locator = "email:robloxmarketplaceai@gmail.com:solana-smart-wallet"
+address = "F1qEoQCEf2xphenxqGx821ts6pUPwckLXx5fRUDh2fCW"
+crossmint_api_key = "sk_production_5j2MKr3X99SypHrhXKnSmfxPT1yAsq9GBPhhyhyKuCLbfbHGDVevrRRjG8UakvxbCYBj5q5jcmoMJ235T5ggkZx9kkbA9Ks34mDq2Hqo1XXfP4AGnfUaoAGoaRqpjm2LtfzqdTqwJaUGzYo6mYLXfuEnAM9bppFDBNfAGijhB41bw9E14rta7EGHbAMut9ayS4tNDNzfr4Q4Pr4nz1EbPZMP\n"
+keypair_path = "/var/root/.coral/crossmint-keypair.json"
+staging = false
