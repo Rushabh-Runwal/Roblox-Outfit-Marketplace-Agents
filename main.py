@@ -1,20 +1,14 @@
 import urllib.parse
 from dotenv import load_dotenv
-import os
-import json
-import asyncio
-import logging
-from typing import List, Dict, Any
+import os, json, asyncio, traceback
 from langchain.chat_models import init_chat_model
 from langchain.prompts import ChatPromptTemplate
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 
-# Import all Roblox tools from our separate module
+# Import our Roblox tools
 from roblox_tools import ALL_ROBLOX_TOOLS
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
 
 def get_tools_description(tools):
     return "\n".join(
@@ -22,96 +16,101 @@ def get_tools_description(tools):
         for tool in tools
     )
 
-async def create_agent(agent_tools):
-    agent_tools_description = get_tools_description(agent_tools)
-    
+async def create_agent(coral_tools, roblox_tools):
+    coral_tools_description = get_tools_description(coral_tools)
+    roblox_tools_description = get_tools_description(roblox_tools)
+    combined_tools = coral_tools + roblox_tools
     prompt = ChatPromptTemplate.from_messages([
         (
             "system",
-            f"""You are the **Catalog Agent** for a Roblox outfit assistant.
-Your job: convert a natural request into **Roblox Catalog API** calls (via tools), then return **up to 10 items per tool** as {{{{assetId, type}}}}. Prefer precise filters over free-text keywords. Never fabricate IDs.
+            f"""You are a Roblox Catalog Agent interacting with the tools from Coral Server and having your own Roblox catalog tools. Your task is to perform any instructions coming from any agent. 
+            Follow these steps in order:
+            1. Call wait_for_mentions from coral tools (timeoutMs: 30000) to receive mentions from other agents.
+            2. When you receive a mention, keep the thread ID and the sender ID.
+            3. Take 2 seconds to think about the content (instruction) of the message and check only from the list of your tools available for you to action.
+            4. Check the tool schema and make a plan in steps for the task you want to perform.
+            5. Only call the tools you need to perform for each step of the plan to complete the instruction in the content.
+            6. Take 3 seconds and think about the content and see if you have executed the instruction to the best of your ability and the tools. Make this your response as "answer".
+            7. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer".
+            8. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error".
+            9. Always respond back to the sender agent even if you have no answer or error.
+            9. Wait for 2 seconds and repeat the process from step 1.
 
-When you receive a request, analyze what Roblox catalog items the user wants and use the appropriate tools to fetch items from the Roblox catalog API.
+            These are the list of coral tools: {coral_tools_description}
+            These are the list of your Roblox tools: {roblox_tools_description}
+            
+            ## Your Roblox Catalog Tools:
+            - **Clothing:** fetch_shirt, fetch_tshirt, fetch_pants
+            - **Accessories:** fetch_headgear, fetch_face, fetch_hair, fetch_back_accessory, fetch_neck_accessory, fetch_shoulder_accessory, fetch_front_accessory, fetch_waist_accessory  
+            - **Other:** fetch_head_bodypart, fetch_bundle, fetch_emote
+            - **Multi-part:** fetch_outfit (for complete outfits)
+            
+            You are a specialist in finding Roblox catalog items. Help users discover the perfect items by converting their requests into precise catalog searches."""
+                ),
+                ("placeholder", "{agent_scratchpad}")
 
-### Tool Usage Guidelines:
-
-**fetch_outfit**: Use for multi-part requests. Input: {{{{parts: ["Head","Shirt","Pants"], keyword: "knight armored"}}}}
-
-**Individual part tools**: Use for specific item types:
-- fetch_headgear → Hats, HeadAccessories
-- fetch_face → Faces, FaceAccessories  
-- fetch_hair → HairAccessories
-- fetch_shirt → Shirts, ClassicShirts
-- fetch_tshirt → TShirts, ClassicTShirts
-- fetch_pants → Pants, ClassicPants
-- fetch_back_accessory → BackAccessories (capes, wings, jetpacks)
-- fetch_neck_accessory → NeckAccessories (scarves, necklaces)
-- fetch_shoulder_accessory → ShoulderAccessories (pauldrons)
-- fetch_front_accessory → FrontAccessories (chest plates, armor)
-- fetch_waist_accessory → WaistAccessories (belts, tails)
-- fetch_head_bodypart → Heads, DynamicHeads
-- fetch_bundle → Bundles
-- fetch_emote → EmoteAnimations
-
-### Parameter Guidelines:
-- Use **keyword** for themes/styles ("knight", "futuristic", "pirate")
-- Use **subcategory** for precise item types (automatically handled by tools)
-- Always cap results to **10** per tool call
-- Output format: [{{{{"assetId": "string-id", "type": "Head"}}}}]
-
-### Example Usage:
-User: "I want a knight outfit"
-→ Use fetch_outfit with parts ["Head","Shirt","Pants","Back Accessory"] and keyword "knight"
-
-User: "Show me futuristic helmets"
-→ Use fetch_headgear with keyword "futuristic"
-
-Available tools: {agent_tools_description}"""
-        ),
-        ("placeholder", "{agent_scratchpad}")
     ])
 
-    # Model configuration - hardcoded except for API key
     model = init_chat_model(
-        model="gpt-4o-mini",  # Using gpt-4o-mini for cost efficiency
-        model_provider="openai",
+        model=os.getenv("MODEL_NAME", "gpt-4.1-mini"),
+        model_provider=os.getenv("MODEL_PROVIDER", "openai"),
         api_key=os.getenv("MODEL_API_KEY"),
-        temperature=0.1,
-        max_tokens=8000
+        temperature=os.getenv("MODEL_TEMPERATURE", "0.3"),
+        max_tokens=os.getenv("MODEL_MAX_TOKENS", "16000"),
+        base_url=os.getenv("MODEL_BASE_URL", None)
     )
-
-    agent = create_tool_calling_agent(model, agent_tools, prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=agent_tools, verbose=True)
-    return agent_executor
+    
+    agent = create_tool_calling_agent(model, combined_tools, prompt)
+    return AgentExecutor(agent=agent, tools=combined_tools, verbose=True, handle_parsing_errors=True)
 
 async def main():
-    load_dotenv()
-    
-    # Check if API key is provided
-    api_key = os.getenv("MODEL_API_KEY")
-    if not api_key:
-        logger.error("MODEL_API_KEY environment variable is required")
-        return
-    
-    logger.info("Initializing Roblox Catalog Agent...")
-    
-    # Use all Roblox catalog tools from the imported module
-    agent_tools = ALL_ROBLOX_TOOLS
-    
-    agent_executor = await create_agent(agent_tools)
-    
-    logger.info("Roblox Catalog Agent started successfully")
-    logger.info("You can now test the agent by providing catalog requests!")
-    
-    # Simple test to verify the agent works
-    test_input = "Find knight armor accessories - back cape, front chest plate, and shoulder armor"
-    logger.info(f"Testing with input: '{test_input}'")
-    
-    try:
-        result = await agent_executor.ainvoke({"input": test_input})
-        logger.info(f"Agent response: {result}")
-    except Exception as e:
-        logger.error(f"Error during test execution: {e}")
+
+    runtime = os.getenv("CORAL_ORCHESTRATION_RUNTIME", None)
+    if runtime is None:
+        load_dotenv()
+
+    base_url = os.getenv("CORAL_SSE_URL")
+    agentID = os.getenv("CORAL_AGENT_ID")
+
+    coral_params = {
+        "agentId": agentID,
+        "agentDescription": "Roblox Catalog Agent specialist in finding Roblox catalog items including clothing, accessories, faces, and more"
+    }
+
+    query_string = urllib.parse.urlencode(coral_params)
+
+    CORAL_SERVER_URL = f"{base_url}?{query_string}"
+    print(f"Connecting to Coral Server: {CORAL_SERVER_URL}")
+
+    timeout = float(os.getenv("TIMEOUT_MS", "300"))
+    client = MultiServerMCPClient(
+        connections={
+            "coral": {
+                "transport": "sse",
+                "url": CORAL_SERVER_URL,
+                "timeout": timeout,
+                "sse_read_timeout": timeout,
+            }
+        }
+    )
+
+    print("Multi Server Connection Initialized")
+
+    coral_tools = await client.get_tools(server_name="coral")
+    print(f"Coral tools count: {len(coral_tools)}, Roblox tools count: {len(ALL_ROBLOX_TOOLS)}")
+
+    agent_executor = await create_agent(coral_tools, ALL_ROBLOX_TOOLS)
+
+    while True:
+        try:
+            print("Starting new agent invocation")
+            await agent_executor.ainvoke({"agent_scratchpad": []})
+            print("Completed agent invocation, restarting loop")
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"Error in agent loop: {e}")
+            traceback.print_exc()
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
     asyncio.run(main())

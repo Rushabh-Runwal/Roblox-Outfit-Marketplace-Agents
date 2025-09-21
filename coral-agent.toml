@@ -1,44 +1,36 @@
 [agent]
 name = "robloxCatalogAgent"
-version = "0.0.1"
-description = "Agent that can search and retrieve items from the Roblox Catalog API for outfit creation"
+version = "1.0.0"
+description = "Specialist agent for searching and retrieving Roblox catalog items including clothing, accessories, faces, and more"
 
 [options.MODEL_API_KEY]
 type = "string"
-description = "API key for the model provider"
+description = "API key for the model provider (OpenAI)"
 
 [options.MODEL_NAME]
 type = "string"
-description = "What model to use (e.g 'gpt-4o')"
-default = "gpt-4o"
+description = "What model to use (e.g 'gpt-4o-mini')"
+default = "gpt-4o-mini"
 
 [options.MODEL_PROVIDER]
 type = "string"
-description = "What model provider to use (e.g 'openai')"
+description = "What model provider to use (e.g 'openai', etc)"
 default = "openai"
-
-[options.MODEL_TEMPERATURE]
-type = "string"
-description = "Temperature for the model (0.0 to 1.0)"
-default = "0.1"
 
 [options.MODEL_MAX_TOKENS]
 type = "string"
-description = "Maximum tokens for the model response"
-default = "8000"
+description = "Max tokens to use"
+default = "16000"
 
-[options.MODEL_BASE_URL]
+[options.MODEL_TEMPERATURE]
 type = "string"
-description = "Base URL for the model API (optional)"
-default = ""
+description = "What model temperature to use"
+default = "0.1"
 
-[options.CORAL_CONNECTION_URL]
+[options.TIMEOUT_MS]
 type = "string"
-description = "URL to connect to the Coral server"
-
-[options.CORAL_AGENT_ID]
-type = "string"
-description = "Agent ID for Coral server communication"
+description = "Connection/tool timeouts in ms"
+default = "60000"
 
 [runtimes.executable]
 command = ["bash", "-c", "./run_agent.sh main.py"]

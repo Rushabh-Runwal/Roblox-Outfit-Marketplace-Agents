@@ -1,13 +1,23 @@
 [project]
 name = "roblox-catalog-coral-agent"
-version = "0.1.0"
+version = "1.0.0"
+description = "Roblox Catalog Agent for Coral Protocol - specialist in finding Roblox catalog items"
 requires-python = ">=3.13"
 dependencies = [
     "langchain==0.3.25",
     "langchain-community==0.3.24",
     "langchain-openai==0.3.26",
+    "langchain-mcp-adapters==0.1.7",
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
     "pydantic>=2.0.0",
     "uv>=0.7.17",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0", 
+    "isort>=5.0.0",
+    "flake8>=6.0.0",
 ]
