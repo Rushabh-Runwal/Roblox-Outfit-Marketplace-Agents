@@ -1,11 +1,11 @@
 [agent]
 name = "robloxCatalogAgent"
-version = "1.0.0"
+version = "1.0.1"
 description = "Specialist agent for searching and retrieving Roblox catalog items including clothing, accessories, faces, and more"
 
-[options.MODEL_API_KEY]
+[options.OPENAI_API_KEY]
 type = "string"
-description = "API key for the model provider (OpenAI)"
+description = "The OpenAI API key to use for AI processing"
 
 [options.MODEL_NAME]
 type = "string"
@@ -32,5 +32,13 @@ type = "string"
 description = "Connection/tool timeouts in ms"
 default = "60000"
 
+[options.CORAL_SERVER_URL]
+type = "string"
+description = "URL of the Coral Protocol server"
+default = "http://localhost:5556"
+
 [runtimes.executable]
 command = ["bash", "-c", "./run_agent.sh main.py"]
+
+[runtimes.docker]
+image = "rushabhrunwal/roblox-catalog-agent:v1.0.1"
